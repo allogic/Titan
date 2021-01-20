@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="dead_space_3.cpp">
+    <ClCompile Include="league_of_legends.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

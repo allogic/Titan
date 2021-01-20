@@ -2,47 +2,6 @@
 
 namespace titan
 {
-  std::int32_t inject_dll(std::string const& file, std::int32_t pid)
-  {
-    unsigned long exit_code{};
-
-    void* p_process{};
-    void* p_dll_path_addr{};
-    void* p_load_lib_addr{};
-    void* p_thread{};
-
-    p_process = OpenProcess(PROCESS_ALL_ACCESS, 0, pid);
-    p_dll_path_addr = VirtualAllocEx(p_process, nullptr, MAX_PATH, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-
-    WriteProcessMemory(p_process, p_dll_path_addr, file.c_str(), file.size(), nullptr);
-
-    p_load_lib_addr = GetProcAddress(GetModuleHandleA("Kernel32"), "LoadLibraryA");
-    p_thread = CreateRemoteThread(p_process, nullptr, 0, (LPTHREAD_START_ROUTINE)p_load_lib_addr, p_dll_path_addr, 0, nullptr);
-
-    WaitForSingleObject(p_thread, INFINITE);
-    GetExitCodeThread(p_thread, &exit_code);
-
-    CloseHandle(p_thread);
-
-    VirtualFreeEx(p_process, p_dll_path_addr, 0, MEM_RELEASE);
-
-    CloseHandle(p_process);
-
-    return !exit_code ? 1 : 0;
-  }
-  std::int32_t spawn_console(std::uint32_t& pid)
-  {
-    if (!AllocConsole())
-      return 0;
-
-    freopen("CONIN$", "r", stdin);
-    freopen("CONOUT$", "w", stdout);
-
-    pid = GetProcessId(GetCurrentProcess());
-
-    return 1;
-  }
-
   namespace util
   {
     std::vector<std::uint8_t> hex_to_bytes(std::string const& hex)
@@ -50,7 +9,7 @@ namespace titan
       std::vector<std::uint8_t> bytes{};
 
       for (std::uint32_t i{}; i < hex.size(); i += 2)
-        bytes.emplace_back((std::uint8_t)std::strtol(hex.substr(i, 2).c_str(), nullptr, 16));
+        bytes.emplace_back((std::uint8_t)std::strtoul(hex.substr(i, 2).c_str(), nullptr, 16));
 
       return bytes;
     }
@@ -63,6 +22,22 @@ namespace titan
         subject.replace(i, search.size(), replace);
         i += replace.size();
       }
+    }
+    std::vector<std::string> tokenize(std::string subject, std::string const& delimiter)
+    {
+      std::vector<std::string> tokens{};
+
+      std::size_t i{};
+
+      while ((i = subject.find(delimiter)) != std::string::npos)
+      {
+        tokens.emplace_back(subject.substr(0, i));
+        subject.erase(0, i + delimiter.size());
+      }
+
+      tokens.emplace_back(subject);
+
+      return tokens;
     }
   }
 
@@ -122,6 +97,15 @@ namespace titan
 
       return 0;
     }
+
+    void dump_processes()
+    {
+
+    }
+    void dump_modules()
+    {
+
+    }
   }
 
   namespace scanner
@@ -169,7 +153,7 @@ namespace titan
 
   namespace memory
   {
-    std::int32_t __stdcall patch(std::uintptr_t base, std::string buffer)
+    std::int32_t patch(std::uintptr_t base, std::string buffer)
     {
       unsigned long old_protection{};
 
@@ -233,5 +217,121 @@ namespace titan
     {
 
     }
+
+    void dump_memory(std::uintptr_t begin, std::size_t size)
+    {
+      std::printf("Dumping memory from 0x%X to 0x%X\n", begin, begin + size);
+    }
+    void dump_memory()
+    {
+
+    }
+  }
+
+  namespace disassembler
+  {
+    void disassemble()
+    {
+      std::uint8_t p_bytes[] =
+      {
+          0x51, 0x8D, 0x45, 0xFF, 0x50, 0xFF, 0x75, 0x0C, 0xFF, 0x75,
+          0x08, 0xFF, 0x15, 0xA0, 0xA5, 0x48, 0x76, 0x85, 0xC0, 0x0F,
+          0x88, 0xFC, 0xDA, 0x02, 0x00
+      };
+
+      ZydisDecoder decoder{};
+      ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_ADDRESS_WIDTH_64);
+
+      ZydisFormatter formatter{};
+      ZydisFormatterInit(&formatter, ZYDIS_FORMATTER_STYLE_INTEL);
+
+      std::size_t offset{};
+      std::size_t size{ sizeof(p_bytes) };
+
+      ZydisDecodedInstruction instruction;
+
+      while (ZYAN_SUCCESS(ZydisDecoderDecodeBuffer(&decoder, p_bytes + offset, size - offset, &instruction)))
+      {
+        char p_buffer[256]{};
+
+        ZydisFormatterFormatInstruction(&formatter, &instruction, p_buffer, sizeof(p_buffer), 0);
+
+        std::printf("%s\n", p_buffer);
+
+        offset += instruction.length;
+      }
+    }
+  }
+
+  std::int32_t inject_dll(std::string const& file, std::int32_t pid)
+  {
+    unsigned long exit_code{};
+
+    void* p_process{};
+    void* p_dll_path_addr{};
+    void* p_load_lib_addr{};
+    void* p_thread{};
+
+    p_process = OpenProcess(PROCESS_ALL_ACCESS, 0, pid);
+    p_dll_path_addr = VirtualAllocEx(p_process, nullptr, MAX_PATH, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
+    WriteProcessMemory(p_process, p_dll_path_addr, file.c_str(), file.size(), nullptr);
+
+    p_load_lib_addr = GetProcAddress(GetModuleHandleA("Kernel32"), "LoadLibraryA");
+    p_thread = CreateRemoteThread(p_process, nullptr, 0, (LPTHREAD_START_ROUTINE)p_load_lib_addr, p_dll_path_addr, 0, nullptr);
+
+    WaitForSingleObject(p_thread, INFINITE);
+    GetExitCodeThread(p_thread, &exit_code);
+
+    CloseHandle(p_thread);
+
+    VirtualFreeEx(p_process, p_dll_path_addr, 0, MEM_RELEASE);
+
+    CloseHandle(p_process);
+
+    return !exit_code ? 1 : 0;
+  }
+  std::int32_t spawn_console(std::uint32_t& pid)
+  {
+    if (!AllocConsole())
+      return 0;
+
+    freopen("CONIN$", "r", stdin);
+    freopen("CONOUT$", "w", stdout);
+
+    pid = GetProcessId(GetCurrentProcess());
+
+    return 1;
+  }
+  std::int32_t interactive()
+  {
+    std::string cmd{};
+    std::vector<std::string> tokens{};
+
+    while (std::getline(std::cin, cmd))
+    {
+      tokens = util::tokenize(cmd, " ");
+
+      if (tokens[0] == "dump")
+      {
+        if (tokens[1] == "memory")
+        {
+          std::uintptr_t begin{ (std::uintptr_t)std::strtoul(tokens[2].data(), nullptr, 16) };
+          std::uintptr_t size{ (std::uintptr_t)std::strtoul(tokens[3].data(), nullptr, 10) };
+
+          memory::dump_memory(begin, size);
+        }
+      }
+
+      if (tokens[0] == "disassemble")
+      {
+        std::uintptr_t begin{ (std::uintptr_t)std::strtoul(tokens[1].data(), nullptr, 16) };
+        std::uintptr_t size{ (std::uintptr_t)std::strtoul(tokens[2].data(), nullptr, 10) };
+
+        disassembler::disassemble();
+      }
+    }
+
+    return 0;
   }
 }

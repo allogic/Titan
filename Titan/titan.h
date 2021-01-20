@@ -1,6 +1,6 @@
 #pragma once
 
-#pragma warning (disable : 6387 6031)
+#pragma warning (disable : 6387 6031 4477)
 
 #include <windows.h>
 #include <tlhelp32.h>
@@ -10,6 +10,8 @@
 #include <string>
 #include <cstring>
 #include <vector>
+
+#include <Zydis/Zydis.h>
 
 #define IN_RANGE(x, a, b) (x >= a && x <= b)
 #define GET_BITS(x) (IN_RANGE((x & (~0x20)), 'A', 'F') ? ((x & (~0x20)) - 'A' + 0xa) : (IN_RANGE(x, '0', '9') ? x - '0' : 0))
@@ -38,19 +40,20 @@ int __stdcall DllMain(HINSTANCE p_instance, unsigned long reason, void* p_reserv
 
 namespace titan
 {
-  std::int32_t inject_dll(std::string const& file, std::int32_t pid);
-  std::int32_t spawn_console(std::uint32_t& pid);
-
   namespace util
   {
     std::vector<std::uint8_t> hex_to_bytes(std::string const& hex);
     void replace_string(std::string& subject, std::string const& search, std::string const& replace);
+    std::vector<std::string> tokenize(std::string subject, std::string const& delimiter);
   }
 
   namespace system
   {
     std::int32_t find_process(std::wstring const& name, std::int32_t flags, PROCESSENTRY32& pe32);
     std::int32_t find_module(std::wstring const& name, std::int32_t pid, std::int32_t flags, MODULEENTRY32& me32);
+
+    void dump_processes();
+    void dump_modules();
   }
 
   namespace scanner
@@ -60,7 +63,7 @@ namespace titan
 
   namespace memory
   {
-    std::int32_t __stdcall patch(std::uintptr_t base, std::string buffer);
+    std::int32_t patch(std::uintptr_t base, std::string buffer);
 
     std::int32_t region_valid(std::uintptr_t base, std::uintptr_t offset);
 
@@ -72,5 +75,17 @@ namespace titan
 
     std::float_t read_float(std::uintptr_t base, std::uintptr_t offset);
     void write_float(std::uintptr_t base, std::uintptr_t offset, std::float_t value);
+
+    void dump_memory(std::uintptr_t begin, std::size_t size);
+    void dump_memory();
   }
+
+  namespace disassembler
+  {
+    void disassemble();
+  }
+
+  std::int32_t inject_dll(std::string const& file, std::int32_t pid);
+  std::int32_t spawn_console(std::uint32_t& pid);
+  std::int32_t interactive();
 }
