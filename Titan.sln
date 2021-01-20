@@ -27,6 +27,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LeagueOfLegendsDLL", "Leagu
 		{B5F8CD0F-BCBC-4BFD-903D-4C6BB3BECEB5} = {B5F8CD0F-BCBC-4BFD-903D-4C6BB3BECEB5}
 	EndProjectSection
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "DLL", "DLL", "{DDFD72AF-713D-4A81-B032-DF11AD762E09}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM = Debug|ARM
@@ -126,6 +128,11 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{DC78FC8B-84CB-45C5-87BD-7822F52AF535} = {DDFD72AF-713D-4A81-B032-DF11AD762E09}
+		{2BD4BD9C-500D-4BF4-8EB4-33F03854018E} = {DDFD72AF-713D-4A81-B032-DF11AD762E09}
+		{373FC05D-1F3F-47D6-891C-E28B1D4230B4} = {DDFD72AF-713D-4A81-B032-DF11AD762E09}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {C8198C14-59C8-442D-B4DB-23A028204CDE}
