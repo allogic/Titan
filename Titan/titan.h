@@ -13,6 +13,8 @@
 
 #include <Zydis/Zydis.h>
 
+#include <capstone/capstone.h>
+
 #define IN_RANGE(x, a, b) (x >= a && x <= b)
 #define GET_BITS(x) (IN_RANGE((x & (~0x20)), 'A', 'F') ? ((x & (~0x20)) - 'A' + 0xa) : (IN_RANGE(x, '0', '9') ? x - '0' : 0))
 #define GET_BYTE(x) (GET_BITS(x[0]) << 4 | GET_BITS(x[1]))
@@ -52,8 +54,10 @@ namespace titan
     std::int32_t find_process(std::wstring const& name, std::int32_t flags, PROCESSENTRY32& pe32);
     std::int32_t find_module(std::wstring const& name, std::int32_t pid, std::int32_t flags, MODULEENTRY32& me32);
 
-    void dump_processes();
-    void dump_modules();
+    void* get_procedure(std::string const& file_name, std::string const& proc_name);
+
+    std::uint32_t dump_processes(std::uint32_t flags);
+    std::uint32_t dump_modules(std::uint32_t pid, std::uint32_t flags);
   }
 
   namespace scanner
@@ -76,13 +80,12 @@ namespace titan
     std::float_t read_float(std::uintptr_t base, std::uintptr_t offset);
     void write_float(std::uintptr_t base, std::uintptr_t offset, std::float_t value);
 
-    void dump_memory(std::uintptr_t begin, std::size_t size);
-    void dump_memory();
+    void dump_memory(std::uintptr_t base, std::uintptr_t offset, std::size_t size, std::size_t page_size);
   }
 
   namespace disassembler
   {
-    void disassemble();
+    std::uint32_t disassemble();
   }
 
   std::int32_t inject_dll(std::string const& file, std::int32_t pid);

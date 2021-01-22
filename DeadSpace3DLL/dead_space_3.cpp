@@ -5,7 +5,7 @@ unsigned long __stdcall DllThread(HINSTANCE p_instance)
   std::uint32_t pid{};
 
   if (titan::spawn_console(pid))
-  {    
+  {
     MODULEENTRY32 ds3{};
 
     titan::system::find_module(L"deadspace3.exe", pid, TH32CS_SNAPMODULE, ds3);
@@ -22,7 +22,9 @@ unsigned long __stdcall DllThread(HINSTANCE p_instance)
       {
         static std::uint32_t ammo_hack_active{};
         ammo_hack_active = !ammo_hack_active;
+
         titan::memory::patch(ds3_begin + 0x1D6F5E, ammo_hack_active ? "90 90 90 90 90 90" : "89 BE 90 02 00 00");
+
         std::printf("infinit ammo %d\n", ammo_hack_active);
       }
 
@@ -30,8 +32,31 @@ unsigned long __stdcall DllThread(HINSTANCE p_instance)
       {
         static std::uint32_t stasis_hack_active{};
         stasis_hack_active = !stasis_hack_active;
+
         titan::memory::patch(ds3_begin + 0x181FC6, stasis_hack_active ? "90 90 90" : "D9 56 08");
+
         std::printf("infinit stasis counter %d\n", stasis_hack_active);
+      }
+
+      if (GetAsyncKeyState(VK_F3) & 0x0001)
+      {
+        static std::uint32_t attack_speed_hack_active{};
+        attack_speed_hack_active = !attack_speed_hack_active;
+
+        titan::memory::patch(ds3_begin + 0xD1118, attack_speed_hack_active ? "90 90 90" : "D9 57 04");
+        titan::memory::patch(ds3_begin + 0xD1181, attack_speed_hack_active ? "90 90 90" : "D9 5F 04");
+
+        std::printf("attack speed %d\n", attack_speed_hack_active);
+      }
+
+      if (GetAsyncKeyState(VK_F4) & 0x0001)
+      {
+        static std::uint32_t reload_speed_hack_active{};
+        reload_speed_hack_active = !reload_speed_hack_active;
+
+        titan::memory::patch(ds3_begin + 0xDC400, reload_speed_hack_active ? "90 90 90" : "D9 5F 18");
+
+        std::printf("reload speed %d\n", reload_speed_hack_active);
       }
     }
   }

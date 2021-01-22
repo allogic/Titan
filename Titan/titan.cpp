@@ -47,7 +47,7 @@ namespace titan
     {
       pe32.dwSize = sizeof(PROCESSENTRY32);
 
-      HANDLE hProcessSnap{ CreateToolhelp32Snapshot(flags, 0) };
+      void* hProcessSnap{ CreateToolhelp32Snapshot(flags, 0) };
 
       if (!Process32First(hProcessSnap, &pe32))
       {
@@ -74,7 +74,7 @@ namespace titan
     {
       me32.dwSize = sizeof(MODULEENTRY32);
 
-      HANDLE hProcessSnap{ CreateToolhelp32Snapshot(flags, pid) };
+      void* hProcessSnap{ CreateToolhelp32Snapshot(flags, pid) };
 
       if (!Module32First(hProcessSnap, &me32))
       {
@@ -98,13 +98,92 @@ namespace titan
       return 0;
     }
 
-    void dump_processes()
+    void* get_procedure(std::string const& file_name, std::string const& proc_name)
     {
+      HINSTANCE p_instance{ LoadLibraryA(file_name.data()) };
 
+      if (p_instance)
+      {
+        void* p_proc{ GetProcAddress(p_instance, proc_name.data()) };
+
+        if (p_proc)
+        {
+          return p_proc;
+        }
+      }
+
+      FreeLibrary(p_instance);
+
+      return nullptr;
     }
-    void dump_modules()
-    {
 
+    std::uint32_t dump_processes(std::uint32_t flags)
+    {
+      PROCESSENTRY32 pe32{};
+      pe32.dwSize = sizeof(PROCESSENTRY32);
+
+      void* hProcessSnap{ CreateToolhelp32Snapshot(flags, 0) };
+
+      if (!Process32First(hProcessSnap, &pe32))
+      {
+        CloseHandle(hProcessSnap);
+
+        return 0;
+      }
+
+      std::printf("ProcId ParentId ModId HeapId BasePrio Handles Threads ProcName\n");
+      std::printf("--------------------------------------------------------------\n");
+
+      do
+      {
+        std::printf("%6d %8d %5d %6d %8d %7d %7d %ls\n",
+          pe32.th32ProcessID,
+          pe32.th32ParentProcessID,
+          pe32.th32ModuleID,
+          pe32.th32DefaultHeapID,
+          pe32.pcPriClassBase,
+          pe32.cntUsage,
+          pe32.cntThreads,
+          std::wstring{ pe32.szExeFile, 32 }.data()
+        );
+      } while (Process32Next(hProcessSnap, &pe32));
+
+      CloseHandle(hProcessSnap);
+
+      return 0;
+    }
+    std::uint32_t dump_modules(std::uint32_t pid, std::uint32_t flags)
+    {
+      MODULEENTRY32 me32{};
+      me32.dwSize = sizeof(MODULEENTRY32);
+
+      void* hProcessSnap{ CreateToolhelp32Snapshot(flags, pid) };
+
+      if (!Module32First(hProcessSnap, &me32))
+      {
+        CloseHandle(hProcessSnap);
+
+        return 0;
+      }
+
+      std::printf("ModId BaseAddr           EndAddr            Size       Handles    ProcName\n");
+      std::printf("--------------------------------------------------------------------------\n");
+
+      do
+      {
+        std::printf("%5d 0x%p 0x%p %10d %10d %ls\n",
+          me32.th32ModuleID,
+          (std::uintptr_t)me32.modBaseAddr,
+          (std::uintptr_t)me32.modBaseAddr + me32.modBaseSize,
+          me32.modBaseSize,
+          me32.GlblcntUsage,
+          std::wstring{ me32.szModule, 32 }.data()
+        );
+      } while (Module32Next(hProcessSnap, &me32));
+
+      CloseHandle(hProcessSnap);
+
+      return 0;
     }
   }
 
@@ -218,19 +297,34 @@ namespace titan
 
     }
 
-    void dump_memory(std::uintptr_t begin, std::size_t size)
+    void dump_memory(std::uintptr_t base, std::uintptr_t offset, std::size_t size, std::size_t page_size)
     {
-      std::printf("Dumping memory from 0x%X to 0x%X\n", begin, begin + size);
-    }
-    void dump_memory()
-    {
+      for (std::uintptr_t i{ base }; i < base + size; i += page_size)
+      {
+        std::printf("%p ", (void*)i);
 
+        for (std::uint32_t j{}; j < page_size; j++)
+        {
+          std::uint8_t byte{ *(std::uint8_t*)(offset + i + j) };
+          byte = (byte >= 32 && byte < 127) ? byte : '.';
+          std::printf("%X ", byte);
+        }
+
+        for (std::uint32_t j{}; j < page_size; j++)
+        {
+          std::uint8_t byte{ *(std::uint8_t*)(offset + i + j) };
+          byte = (byte >= 32 && byte < 127) ? byte : '.';
+          std::printf("%c", byte);
+        }
+
+        std::printf("\n");
+      }
     }
   }
 
   namespace disassembler
   {
-    void disassemble()
+    std::uint32_t disassemble()
     {
       std::uint8_t p_bytes[] =
       {
@@ -239,6 +333,8 @@ namespace titan
           0x88, 0xFC, 0xDA, 0x02, 0x00
       };
 
+#ifdef _WIN64
+#if defined(TITAN_ZYDIS)
       ZydisDecoder decoder{};
       ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_ADDRESS_WIDTH_64);
 
@@ -260,6 +356,33 @@ namespace titan
 
         offset += instruction.length;
       }
+#endif
+#if defined(TITAN_CAPSTONE)
+      csh handle{};
+      cs_insn* p_inst{};
+
+      std::size_t count{};
+
+      if (cs_open(CS_ARCH_X86, CS_MODE_32, &handle) != CS_ERR_OK)
+        return -1;
+
+      count = cs_disasm(handle, p_bytes, sizeof(p_bytes), 0x1000, 0, &p_inst);
+
+      if (count > 0)
+      {
+        for (std::size_t i{}; i < count; i++)
+          std::printf("0x%" PRIx64 ":\t%s\t\t%s\n",
+            p_inst[i].address,
+            p_inst[i].mnemonic,
+            p_inst[i].op_str
+          );
+      }
+
+      cs_close(&handle);
+#endif
+#endif
+
+      return 0;
     }
   }
 
@@ -317,16 +440,29 @@ namespace titan
         if (tokens[1] == "memory")
         {
           std::uintptr_t begin{ (std::uintptr_t)std::strtoul(tokens[2].data(), nullptr, 16) };
-          std::uintptr_t size{ (std::uintptr_t)std::strtoul(tokens[3].data(), nullptr, 10) };
+          std::size_t size{ (std::size_t)std::strtoul(tokens[3].data(), nullptr, 10) };
+          std::size_t page_size{ (std::size_t)std::strtoul(tokens[4].data(), nullptr, 10) };
 
-          memory::dump_memory(begin, size);
+          memory::dump_memory(begin, 0, size, page_size);
+        }
+
+        if (tokens[1] == "processes")
+        {
+          system::dump_processes(TH32CS_SNAPPROCESS);
+        }
+
+        if (tokens[1] == "modules")
+        {
+          std::uint32_t pid{ (std::uint32_t)std::atoi(tokens[2].data()) };
+
+          system::dump_modules(pid, TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32);
         }
       }
 
       if (tokens[0] == "disassemble")
       {
         std::uintptr_t begin{ (std::uintptr_t)std::strtoul(tokens[1].data(), nullptr, 16) };
-        std::uintptr_t size{ (std::uintptr_t)std::strtoul(tokens[2].data(), nullptr, 10) };
+        std::size_t size{ (std::size_t)std::strtoul(tokens[2].data(), nullptr, 10) };
 
         disassembler::disassemble();
       }

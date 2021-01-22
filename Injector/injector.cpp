@@ -1,14 +1,20 @@
 #include <titan.h>
 
+#ifdef _WIN64
+#define PATH "C:\\Users\\Michael\\Downloads\\Titan\\x64Debug\\"
+#else
+#define PATH "C:\\Users\\Michael\\Downloads\\Titan\\Debug\\"
+#endif
+
 int wmain()
 {
-  titan::interactive();
+  //titan::interactive();
 
   PROCESSENTRY32 pe32{};
 
-  if (titan::system::find_process(L"League of Legends.exe", TH32CS_SNAPPROCESS, pe32))
+  if (titan::system::find_process(L"deadspace3.exe", TH32CS_SNAPPROCESS, pe32))
   {
-    if (titan::inject_dll("C:\\Users\\Michael\\Downloads\\Titan\\Debug\\LeagueOfLegendsDLL.dll", pe32.th32ProcessID))
+    if (titan::inject_dll(PATH "DeadSpace3DLL.dll", pe32.th32ProcessID))
     {
       return 0;
     }

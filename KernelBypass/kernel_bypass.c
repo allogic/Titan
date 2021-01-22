@@ -3,6 +3,12 @@
 #include <ntddk.h>
 #include <wdf.h>
 
+//windbg.exe !process 0 0 explorer.exe
+//windbg.exe .process /p 0x?
+//windbg.exe .reload /f dxgkrnl.sys
+
+//NtQueryCompositionSurfaceStatistics
+
 //sc.exe create kernel_bypass type=kernel binpath="C:\Users\Michael\source\repos\Titan\x64\Debug\KernelBypass.sys"
 //sc.exe start kernel_bypass
 //sc.exe stop kernel_bypass
