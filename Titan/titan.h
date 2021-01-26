@@ -10,6 +10,7 @@
 #include <string>
 #include <cstring>
 #include <vector>
+#include <sstream>
 
 #include <Zydis/Zydis.h>
 
@@ -44,7 +45,12 @@ namespace titan
 {
   namespace util
   {
-    std::vector<std::uint8_t> hex_to_bytes(std::string const& hex);
+    std::vector<std::uint8_t> int_to_bytes(std::uint64_t val);
+    std::vector<std::uint8_t> str_to_bytes(std::string const& str);
+
+    std::string bytes_to_str(std::vector<std::uint8_t> const& bytes);
+    std::string bytes_reverse(std::string const& subject);
+
     void replace_string(std::string& subject, std::string const& search, std::string const& replace);
     std::vector<std::string> tokenize(std::string subject, std::string const& delimiter);
   }
@@ -68,16 +74,16 @@ namespace titan
   namespace memory
   {
     std::int32_t patch(std::uintptr_t base, std::string buffer);
+    std::int32_t patch(std::uintptr_t base, std::vector<std::uint8_t> bytes);
 
-    std::int32_t region_valid(std::uintptr_t base, std::uintptr_t offset);
+    std::uintptr_t gate(std::uintptr_t return_addr, std::string buffer);
 
-    std::uint32_t read_int(std::uintptr_t base, std::uintptr_t offset);
-    void write_int(std::uintptr_t base, std::uintptr_t offset, std::int32_t value);
-
+    std::int32_t read_int(std::uintptr_t base, std::uintptr_t offset);
     std::string read_string(std::uintptr_t base, std::uintptr_t offset);
-    void write_string(std::uintptr_t base, std::uintptr_t offset, std::string const& value);
-
     std::float_t read_float(std::uintptr_t base, std::uintptr_t offset);
+
+    void write_int(std::uintptr_t base, std::uintptr_t offset, std::int32_t value);
+    void write_string(std::uintptr_t base, std::uintptr_t offset, std::string const& value);
     void write_float(std::uintptr_t base, std::uintptr_t offset, std::float_t value);
 
     void dump_memory(std::uintptr_t base, std::uintptr_t offset, std::size_t size, std::size_t page_size);

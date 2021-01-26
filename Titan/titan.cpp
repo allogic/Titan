@@ -4,15 +4,47 @@ namespace titan
 {
   namespace util
   {
-    std::vector<std::uint8_t> hex_to_bytes(std::string const& hex)
+    std::vector<std::uint8_t> int_to_bytes(std::uint64_t val)
     {
       std::vector<std::uint8_t> bytes{};
 
-      for (std::uint32_t i{}; i < hex.size(); i += 2)
-        bytes.emplace_back((std::uint8_t)std::strtoul(hex.substr(i, 2).c_str(), nullptr, 16));
+      for (std::size_t i{}; i < 4; i++)
+        bytes.emplace_back((std::uint8_t)(val >> (i * 8)));
 
       return bytes;
     }
+    std::vector<std::uint8_t> str_to_bytes(std::string const& str)
+    {
+      std::vector<std::uint8_t> bytes{};
+
+      for (std::size_t i{}; i < str.size(); i += 2)
+        bytes.emplace_back((std::uint8_t)std::strtoul(str.substr(i, 2).c_str(), nullptr, 16));
+
+      return bytes;
+    }
+
+    std::string bytes_to_str(std::vector<std::uint8_t> const& bytes)
+    {
+      std::string str{};
+
+      str.resize(bytes.size() * 2);
+
+      for (std::size_t i{}; i < bytes.size(); i++)
+        std::sprintf(&str[i * 2], "%02X", *(&bytes[i]));
+
+      return str;
+    }
+    std::string bytes_reverse(std::string const& subject)
+    {
+      std::string str{};
+      std::size_t i{};
+
+      for (std::size_t i{}; i < subject.size() / 2; i += 2)
+        str += subject.substr((subject.size() / 2 - 1) - i, 2);
+
+      return str;
+    }
+
     void replace_string(std::string& subject, std::string const& search, std::string const& replace)
     {
       std::size_t i{};
@@ -23,6 +55,7 @@ namespace titan
         i += replace.size();
       }
     }
+
     std::vector<std::string> tokenize(std::string subject, std::string const& delimiter)
     {
       std::vector<std::string> tokens{};
@@ -240,61 +273,165 @@ namespace titan
 
       void* p_addr{ (void*)base };
 
-      std::size_t num_bytes{ std::count(buffer.begin(), buffer.end(), ' ') + (std::size_t)1 };
-
       util::replace_string(buffer, " ", "");
+      util::replace_string(buffer, "\n", "");
+      util::replace_string(buffer, "\t", "");
 
-      std::vector<std::uint8_t> bytes{ util::hex_to_bytes(buffer) };
+      std::vector<std::uint8_t> bytes{ util::str_to_bytes(buffer) };
 
       base = ROUND_DOWN(p_addr, 0x1000);
-      size = ROUND_UP(num_bytes, 0x1000);
+      size = ROUND_UP(bytes.size(), 0x1000);
 
       if (VirtualProtect((void*)base, size, PAGE_EXECUTE_READWRITE, &old_protection))
       {
-        std::memcpy(p_addr, bytes.data(), num_bytes);
+        std::memcpy(p_addr, bytes.data(), bytes.size());
 
         if (VirtualProtect((void*)base, size, old_protection, &old_protection))
         {
           if (FlushInstructionCache(GetCurrentProcess(), (void*)base, size))
-            return 0;
+            return 1;
 
-          return GetLastError();
+          return 0;
         }
       }
 
-      return GetLastError();
+      return 0;
     }
-
-    std::int32_t region_valid(std::uintptr_t base, std::uintptr_t offset)
+    std::int32_t patch(std::uintptr_t base, std::vector<std::uint8_t> bytes)
     {
+      unsigned long old_protection{};
+
+      std::uint32_t size{};
+
+      void* p_addr{ (void*)base };
+
+      base = ROUND_DOWN(p_addr, 0x1000);
+      size = ROUND_UP(bytes.size(), 0x1000);
+
+      if (VirtualProtect((void*)base, size, PAGE_EXECUTE_READWRITE, &old_protection))
+      {
+        std::memcpy(p_addr, bytes.data(), bytes.size());
+
+        if (VirtualProtect((void*)base, size, old_protection, &old_protection))
+        {
+          if (FlushInstructionCache(GetCurrentProcess(), (void*)base, size))
+            return 1;
+
+          return 0;
+        }
+      }
+
       return 0;
     }
 
-    std::uint32_t read_int(std::uintptr_t base, std::uintptr_t offset)
+    std::uintptr_t gate(std::uintptr_t return_addr, std::string buffer)
     {
-      return 0;
+      util::replace_string(buffer, " ", "");
+      util::replace_string(buffer, "\n", "");
+      util::replace_string(buffer, "\t", "");
+
+      std::vector<std::uint8_t> bytes{ util::str_to_bytes(buffer) };
+      std::size_t section_size{ bytes.size() + 7 };
+
+      void* p_gateway{ VirtualAlloc(nullptr, bytes.size() + 7, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE) };
+
+      std::printf("gateway_begin %p\n", p_gateway);
+
+      std::memcpy(p_gateway, bytes.data(), bytes.size());
+
+      //*(std::uint8_t*)((std::uintptr_t)p_gateway + (bytes.size() - 5)) = 0xE9;
+      //*(std::uintptr_t*)((std::uintptr_t)p_gateway + (bytes.size() - 5) + 1) = return_addr;
+
+      *(std::uint8_t*)((std::uintptr_t)p_gateway + (section_size - 7)) = 0xBA;
+      *(std::uintptr_t*)((std::uintptr_t)p_gateway + (section_size - 6)) = return_addr;
+
+      *(std::uint8_t*)((std::uintptr_t)p_gateway + (section_size - 2)) = 0xFF;
+      *(std::uint8_t*)((std::uintptr_t)p_gateway + (section_size - 1)) = 0xE0;
+
+      return (std::uintptr_t)p_gateway;
     }
-    void write_int(std::uintptr_t base, std::uintptr_t offset, std::int32_t value)
+
+    std::int32_t read_int(std::uintptr_t base, std::uintptr_t offset)
     {
+      std::int32_t value{};
 
+      unsigned long old_protection{};
+
+      if (VirtualProtect((void*)(base + offset), 4, PAGE_EXECUTE_READWRITE, &old_protection))
+      {
+        value = *(std::int32_t*)(*(std::uintptr_t*)(base + offset));
+
+        if (VirtualProtect((void*)(base + offset), 4, old_protection, &old_protection))
+          return value;
+      }
+
+      return value;
     }
-
     std::string read_string(std::uintptr_t base, std::uintptr_t offset)
     {
-      return "";
+      std::string value{};
+
+      unsigned long old_protection{};
+
+      if (VirtualProtect((void*)(base + offset), 4, PAGE_EXECUTE_READWRITE, &old_protection))
+      {
+        value = *(std::string*)(*(std::uintptr_t*)(base + offset));
+
+        if (VirtualProtect((void*)(base + offset), 4, old_protection, &old_protection))
+          return value;
+      }
+
+      return value;
+    }
+    std::float_t read_float(std::uintptr_t base, std::uintptr_t offset)
+    {
+      std::float_t value{};
+
+      unsigned long old_protection{};
+
+      if (VirtualProtect((void*)(base + offset), 4, PAGE_EXECUTE_READWRITE, &old_protection))
+      {
+        value = *(std::float_t*)(*(std::uintptr_t*)(base + offset));
+
+        if (VirtualProtect((void*)(base + offset), 4, old_protection, &old_protection))
+          return value;
+      }
+
+      return value;
+    }
+
+    void write_int(std::uintptr_t base, std::uintptr_t offset, std::int32_t value)
+    {
+      unsigned long old_protection{};
+
+      if (VirtualProtect((void*)(base + offset), 4, PAGE_EXECUTE_READWRITE, &old_protection))
+      {
+        *(std::int32_t*)(*(std::uintptr_t*)(base + offset)) = value;
+
+        VirtualProtect((void*)(base + offset), 4, old_protection, &old_protection);
+      }
     }
     void write_string(std::uintptr_t base, std::uintptr_t offset, std::string const& value)
     {
+      unsigned long old_protection{};
 
-    }
+      if (VirtualProtect((void*)(base + offset), 4, PAGE_EXECUTE_READWRITE, &old_protection))
+      {
+        *(std::string*)(*(std::uintptr_t*)(base + offset)) = value;
 
-    std::float_t read_float(std::uintptr_t base, std::uintptr_t offset)
-    {
-      return 0.f;
+        VirtualProtect((void*)(base + offset), 4, old_protection, &old_protection);
+      }
     }
     void write_float(std::uintptr_t base, std::uintptr_t offset, std::float_t value)
     {
+      unsigned long old_protection{};
 
+      if (VirtualProtect((void*)(base + offset), 4, PAGE_EXECUTE_READWRITE, &old_protection))
+      {
+        *(std::float_t*)(*(std::uintptr_t*)(base + offset)) = value;
+
+        VirtualProtect((void*)(base + offset), 4, old_protection, &old_protection);
+      }
     }
 
     void dump_memory(std::uintptr_t base, std::uintptr_t offset, std::size_t size, std::size_t page_size)

@@ -12,9 +12,9 @@ int wmain()
 
   PROCESSENTRY32 pe32{};
 
-  if (titan::system::find_process(L"deadspace3.exe", TH32CS_SNAPPROCESS, pe32))
+  if (titan::system::find_process(L"deadspace2.exe", TH32CS_SNAPPROCESS, pe32))
   {
-    if (titan::inject_dll(PATH "DeadSpace3DLL.dll", pe32.th32ProcessID))
+    if (titan::inject_dll(PATH "DeadSpace2DLL.dll", pe32.th32ProcessID))
     {
       return 0;
     }
