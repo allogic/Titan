@@ -49,9 +49,9 @@ namespace titan
     std::vector<std::uint8_t> str_to_bytes(std::string const& str);
 
     std::string bytes_to_str(std::vector<std::uint8_t> const& bytes);
-    std::string bytes_reverse(std::string const& subject);
 
     void replace_string(std::string& subject, std::string const& search, std::string const& replace);
+
     std::vector<std::string> tokenize(std::string subject, std::string const& delimiter);
   }
 
@@ -76,7 +76,8 @@ namespace titan
     std::int32_t patch(std::uintptr_t base, std::string buffer);
     std::int32_t patch(std::uintptr_t base, std::vector<std::uint8_t> bytes);
 
-    std::uintptr_t gate(std::uintptr_t return_addr, std::string buffer);
+    std::uintptr_t inject(std::uintptr_t base, std::uintptr_t return_addr, std::string buffer);
+    std::uintptr_t inject_asm(std::uintptr_t assembly, std::size_t size);
 
     std::int32_t read_int(std::uintptr_t base, std::uintptr_t offset);
     std::string read_string(std::uintptr_t base, std::uintptr_t offset);

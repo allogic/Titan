@@ -34,16 +34,6 @@ namespace titan
 
       return str;
     }
-    std::string bytes_reverse(std::string const& subject)
-    {
-      std::string str{};
-      std::size_t i{};
-
-      for (std::size_t i{}; i < subject.size() / 2; i += 2)
-        str += subject.substr((subject.size() / 2 - 1) - i, 2);
-
-      return str;
-    }
 
     void replace_string(std::string& subject, std::string const& search, std::string const& replace)
     {
@@ -324,7 +314,7 @@ namespace titan
       return 0;
     }
 
-    std::uintptr_t gate(std::uintptr_t return_addr, std::string buffer)
+    std::uintptr_t inject(std::uintptr_t base, std::uintptr_t return_addr, std::string buffer)
     {
       util::replace_string(buffer, " ", "");
       util::replace_string(buffer, "\n", "");
@@ -342,13 +332,27 @@ namespace titan
       //*(std::uint8_t*)((std::uintptr_t)p_gateway + (bytes.size() - 5)) = 0xE9;
       //*(std::uintptr_t*)((std::uintptr_t)p_gateway + (bytes.size() - 5) + 1) = return_addr;
 
+      return_addr = return_addr - (std::uintptr_t)p_gateway;
+
+      // 6657930 - 4D117E
+      // 6657930
+
       *(std::uint8_t*)((std::uintptr_t)p_gateway + (section_size - 7)) = 0xBA;
-      *(std::uintptr_t*)((std::uintptr_t)p_gateway + (section_size - 6)) = return_addr;
+      *(std::uintptr_t*)((std::uintptr_t)p_gateway + (section_size - 6)) = base + return_addr;
 
       *(std::uint8_t*)((std::uintptr_t)p_gateway + (section_size - 2)) = 0xFF;
       *(std::uint8_t*)((std::uintptr_t)p_gateway + (section_size - 1)) = 0xE0;
 
       return (std::uintptr_t)p_gateway;
+    }
+    std::uintptr_t inject_asm(std::uintptr_t assembly, std::size_t size)
+    {
+      void* p_memory{ VirtualAlloc(nullptr, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE) };
+
+      if (p_memory)
+        std::memcpy(p_memory, (void*)assembly, size);
+
+      return (std::uintptr_t)p_memory;
     }
 
     std::int32_t read_int(std::uintptr_t base, std::uintptr_t offset)

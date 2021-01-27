@@ -1,8 +1,43 @@
 #include <titan.h>
 
-static volatile void hook_weapon_module()
+std::int32_t write(std::uintptr_t base, std::size_t size, std::uintptr_t assembly)
 {
-  std::exit(42);
+  unsigned long old_protection{};
+
+  std::uintptr_t page_base{ ROUND_DOWN((void*)base, 0x1000) };
+  std::size_t page_size{ ROUND_UP(size, 0x1000) };
+
+  if (VirtualProtect((void*)page_base, page_size, PAGE_EXECUTE_READWRITE, &old_protection))
+  {
+    std::memcpy((void*)base, (void*)assembly, size);
+
+    if (VirtualProtect((void*)page_base, page_size, old_protection, &old_protection))
+      if (FlushInstructionCache(GetCurrentProcess(), (void*)base, size))
+        return 1;
+  }
+
+  return 0;
+}
+
+__declspec(naked) void weapon_mod_gate()
+{
+  __asm
+  {
+    mov edx, 0x400000 + 0xD1244 // 5
+    jmp edx                     // 2
+    nop                         // 1
+    nop                         // 1
+  }
+}
+__declspec(naked) void weapon_mod_injection()
+{
+  __asm
+  {
+    fadd dword ptr [edi + 4]    // 3
+    nop                         // 1
+    mov edx, 0x400000 + 0xD118A // 5
+    jmp edx                     // 2
+  }
 }
 
 unsigned long __stdcall DllThread(HINSTANCE p_instance)
@@ -11,18 +46,6 @@ unsigned long __stdcall DllThread(HINSTANCE p_instance)
 
   if (titan::spawn_console(pid))
   {
-    MODULEENTRY32 ds3{};
-    MODULEENTRY32 ds3_dll{};
-
-    titan::system::find_module(L"deadspace3.exe", pid, TH32CS_SNAPMODULE, ds3);
-    titan::system::find_module(L"DeadSpace3DLL.dll", pid, TH32CS_SNAPMODULE, ds3_dll);
-
-    std::uintptr_t ds3_begin{ (std::uintptr_t)ds3.modBaseAddr };
-    std::uintptr_t ds3_end{ ds3.modBaseSize };
-
-    std::uintptr_t ds3_dll_begin{ (std::uintptr_t)ds3_dll.modBaseAddr };
-    std::uintptr_t ds3_dll_end{ ds3_dll.modBaseSize };
-
     while (1)
     {
       if (GetAsyncKeyState(VK_F1) & 0x0001)
@@ -30,42 +53,38 @@ unsigned long __stdcall DllThread(HINSTANCE p_instance)
         static std::uint32_t active{};
         active = !active;
 
-        titan::memory::patch(ds3_begin + 0x1D6F5E, active ? "90 90 90 90 90 90" : "89 BE 90 02 00 00");
+        titan::memory::patch(0x400000 + 0x1D6F5E, active ? "90 90 90 90 90 90" : "89 BE 90 02 00 00");
 
         std::printf("infinit ammo %d\n", active);
       }
-
       if (GetAsyncKeyState(VK_F2) & 0x0001)
       {
         static std::uint32_t active{};
         active = !active;
 
-        titan::memory::patch(ds3_begin + 0x181FC6, active ? "90 90 90" : "D9 56 08");
+        titan::memory::patch(0x400000 + 0x181FC6, active ? "90 90 90" : "D9 56 08");
 
         std::printf("infinit stasis counter %d\n", active);
       }
-
       if (GetAsyncKeyState(VK_F3) & 0x0001)
       {
         static std::uint32_t active{};
         active = !active;
 
-        titan::memory::patch(ds3_begin + 0xD1118, active ? "90 90 90" : "D9 57 04");
-        titan::memory::patch(ds3_begin + 0xD1181, active ? "90 90 90" : "D9 5F 04");
+        titan::memory::patch(0x400000 + 0xD1118, active ? "90 90 90" : "D9 57 04");
+        titan::memory::patch(0x400000 + 0xD1181, active ? "90 90 90" : "D9 5F 04");
 
         std::printf("attack speed %d\n", active);
       }
-
       if (GetAsyncKeyState(VK_F4) & 0x0001)
       {
         static std::uint32_t active{};
         active = !active;
 
-        titan::memory::patch(ds3_begin + 0xDC400, active ? "90 90 90" : "D9 5F 18");
+        titan::memory::patch(0x400000 + 0xDC400, active ? "90 90 90" : "D9 5F 18");
 
         std::printf("reload speed %d\n", active);
       }
-
       if (GetAsyncKeyState(VK_F5) & 0x0001)
       {
         static std::uint32_t initialized{};
@@ -76,10 +95,8 @@ unsigned long __stdcall DllThread(HINSTANCE p_instance)
         {
           initialized = !initialized;
 
-          std::printf("ds3_begin %p\n", (void*)ds3_begin);
-
           // D9 80 - Push ST(i) onto the FPU register stack.
-          hook_addr = titan::memory::gate(ds3_begin + 0xD117E, R"asm(
+          hook_addr = titan::memory::inject(0x400000, 0xD117E, R"asm(
             90 90 90 90 90 90
           )asm");
         }
@@ -89,15 +106,22 @@ unsigned long __stdcall DllThread(HINSTANCE p_instance)
         // 0xE1040 - E8 BB00FFFF  - call deadspace3.exe+D1100
 
         std::vector<std::uint8_t> hook_addr_bytes{ titan::util::int_to_bytes(hook_addr) };
-        std::string hook_addr_bytes_str{ titan::util::bytes_reverse(titan::util::bytes_to_str(hook_addr_bytes)) };
+        std::string hook_addr_bytes_str{ titan::util::bytes_to_str(hook_addr_bytes) };
 
-        std::string hook_bytes    { "BA FF FF FF FF 90 FF E2 90" };
+        std::string hook_bytes    { "BA " + hook_addr_bytes_str + " 90 FF E2 90" };
         std::string original_bytes{ "D9 80 D4 02 00 00 D8 47 04" };
 
-        titan::memory::patch(ds3_begin + 0xD1178, active ? hook_bytes : original_bytes);
-        titan::memory::patch(ds3_begin + 0xD1178 + 1, hook_addr_bytes_str);
+        titan::memory::patch(0x400000 + 0xD1178, active ? hook_bytes : original_bytes);
+        //titan::memory::patch(0x400000 + 0xD1178 + 1, hook_addr_bytes_str);
 
         std::printf("module hook %d\n", active);
+      }
+      if (GetAsyncKeyState(VK_F6) & 0x0001)
+      {
+        write(0x400000 + 0xD1181, 9, (std::uintptr_t)weapon_mod_gate);
+        write(0x400000 + 0xD1244, 11, (std::uintptr_t)weapon_mod_injection);
+
+        std::printf("weapon mod patched\n");
       }
     }
   }
