@@ -12,31 +12,40 @@ std::int32_t write(std::uintptr_t base, std::size_t size, std::uintptr_t assembl
     std::memcpy((void*)base, (void*)assembly, size);
 
     if (VirtualProtect((void*)page_base, page_size, old_protection, &old_protection))
-      if (FlushInstructionCache(GetCurrentProcess(), (void*)base, size))
+      if (FlushInstructionCache(GetCurrentProcess(), (void*)page_base, page_size))
         return 1;
   }
 
   return 0;
 }
 
-__declspec(naked) void weapon_mod_gate()
+__declspec(naked) void weapon_mod_orig()
 {
   __asm
   {
-    mov edx, 0x400000 + 0xD1244 // 5
-    jmp edx                     // 2
-    nop                         // 1
-    nop                         // 1
+    fld dword ptr [eax + 0x2D8] // 6
+    fadd dword ptr [edi]        // 2
+    fstp dword ptr [edi]        // 2
+    fld dword ptr [eax + 0x2D4] // 6
+    fadd dword ptr [edi + 0x4]  // 3
+    fstp dword ptr [edi + 0x4]  // 3
   }
 }
-__declspec(naked) void weapon_mod_injection()
+__declspec(naked) void weapon_mod_patch()
 {
   __asm
   {
-    fadd dword ptr [edi + 4]    // 3
+    mov edx, 0xC479C000         // 5 - Mov attack speed into edx
+    mov [edi], edx              // 2 - Mov attack speed higher into memory
+    mov [edi + 0x4], edx        // 3 - Mov attack speed lower into memory
+
+    mov edx, 0x41200000         // 5 - Mov reload speed into edx
+    mov [edi + 0x18], edx       // 3 - Mov reload speed into memory
+
     nop                         // 1
-    mov edx, 0x400000 + 0xD118A // 5
-    jmp edx                     // 2
+    nop                         // 1
+    nop                         // 1
+    nop                         // 1
   }
 }
 
@@ -118,10 +127,15 @@ unsigned long __stdcall DllThread(HINSTANCE p_instance)
       }
       if (GetAsyncKeyState(VK_F6) & 0x0001)
       {
-        write(0x400000 + 0xD1181, 9, (std::uintptr_t)weapon_mod_gate);
-        write(0x400000 + 0xD1244, 11, (std::uintptr_t)weapon_mod_injection);
+        static std::uint32_t active{};
+        active = !active;
 
-        std::printf("weapon mod patched\n");
+        write(0x400000 + 0xD116E, 22, active ? (std::uintptr_t)weapon_mod_patch : (std::uintptr_t)weapon_mod_orig);
+
+        //write(0x400000 + 0xDC3FD, 6, active ? (std::uintptr_t)"\x90\x90\x90\x90\x90\x90" : (std::uintptr_t)"\xD9\x45\xFC\xD9\x5F\x18");
+        //write(0x400000 + 0x7E5603, 2, active ? (std::uintptr_t)"\x90\x90" : (std::uintptr_t)"\x88\x02");
+
+        std::printf("weapon mods %d\n", active);
       }
     }
   }
