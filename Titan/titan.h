@@ -10,9 +10,10 @@
 #include <string>
 #include <cstring>
 #include <vector>
+#include <fstream>
 #include <sstream>
 
-#include <Zydis/Zydis.h>
+#include <zydis/zydis.h>
 
 #include <capstone/capstone.h>
 
@@ -60,8 +61,6 @@ namespace titan
     std::int32_t find_process(std::wstring const& name, std::int32_t flags, PROCESSENTRY32& pe32);
     std::int32_t find_module(std::wstring const& name, std::int32_t pid, std::int32_t flags, MODULEENTRY32& me32);
 
-    void* get_procedure(std::string const& file_name, std::string const& proc_name);
-
     std::uint32_t dump_processes(std::uint32_t flags);
     std::uint32_t dump_modules(std::uint32_t pid, std::uint32_t flags);
   }
@@ -73,19 +72,8 @@ namespace titan
 
   namespace memory
   {
-    std::int32_t patch(std::uintptr_t base, std::string buffer);
-    std::int32_t patch(std::uintptr_t base, std::vector<std::uint8_t> bytes);
-
-    std::uintptr_t inject(std::uintptr_t base, std::uintptr_t return_addr, std::string buffer);
-    std::uintptr_t inject_asm(std::uintptr_t assembly, std::size_t size);
-
-    std::int32_t read_int(std::uintptr_t base, std::uintptr_t offset);
-    std::string read_string(std::uintptr_t base, std::uintptr_t offset);
-    std::float_t read_float(std::uintptr_t base, std::uintptr_t offset);
-
-    void write_int(std::uintptr_t base, std::uintptr_t offset, std::int32_t value);
-    void write_string(std::uintptr_t base, std::uintptr_t offset, std::string const& value);
-    void write_float(std::uintptr_t base, std::uintptr_t offset, std::float_t value);
+    std::int32_t read(std::uintptr_t base, std::size_t size, std::uintptr_t assembly);
+    std::int32_t write(std::uintptr_t base, std::size_t size, std::uintptr_t assembly);
 
     void dump_memory(std::uintptr_t base, std::uintptr_t offset, std::size_t size, std::size_t page_size);
   }
@@ -93,6 +81,21 @@ namespace titan
   namespace disassembler
   {
     std::uint32_t disassemble();
+  }
+
+  namespace console
+  {
+    void parse_args(std::int32_t argc, char** argv);
+  }
+
+  namespace filesystem
+  {
+    std::int32_t read_int(std::fstream& stream, std::size_t offset, std::uint32_t big_endian = 0);
+
+    namespace ea
+    {
+      void dump_viv_header(std::string const& file);
+    }
   }
 
   std::int32_t inject_dll(std::string const& file, std::int32_t pid);

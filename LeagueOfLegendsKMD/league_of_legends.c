@@ -1,31 +1,27 @@
+
+#pragma warning (disable : 4022)
+
 #include <ntdef.h>
 #include <ntifs.h>
 #include <ntddk.h>
 #include <windef.h>
 #include <wdf.h>
 
-DRIVER_INITIALIZE DriverEntry;
-#pragma alloc_text(INIT, DriverEntry)
-#define PROCESS_QUERY_LIMITED_INFORMATION      0x1000
-
-
-
-typedef struct _OB_REG_CONTEXT {
-  USHORT Version;
-  UNICODE_STRING Altitude;
-  USHORT ulIndex;
-  OB_OPERATION_REGISTRATION* OperationRegistration;
-} REG_CONTEXT, * PREG_CONTEXT;
+#define PROCESS_QUERY_LIMITED_INFORMATION 0x1000
 
 UNICODE_STRING SACDriverName, SACSymbolName;
 PVOID ObHandle = NULL;
 
-//ULONG ProtectedProcess1 = 516; // The Usermode Anti Cheat PID
 ULONG ProtectedProcess = 0; // Your game's PID
 ULONG Lsass = 0;
 ULONG Csrss1 = 0;
 ULONG Csrss2 = 0;
 ULONG ProtectedThreadID = 0;
+
+//////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////
+
 // This function will be called when a handle is about to be created
 OB_PREOP_CALLBACK_STATUS PreCallback(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION OperationInformation)
 {
@@ -48,14 +44,13 @@ OB_PREOP_CALLBACK_STATUS PreCallback(PVOID RegistrationContext, POB_PRE_OPERATIO
   PEPROCESS Csrss2Process;
   PEPROCESS ProtectedProcessProcess;
 
-  PEPROCESS OpenedProcess = (PEPROCESS)OperationInformation->Object,
-    CurrentProcess = PsGetCurrentProcess();
+  PEPROCESS OpenedProcess = (PEPROCESS)OperationInformation->Object;
+  PEPROCESS CurrentProcess = PsGetCurrentProcess();
 
   PsLookupProcessByProcessId(ProtectedProcess, &ProtectedProcessProcess); // Getting the PEPROCESS using the PID 
   PsLookupProcessByProcessId(Lsass, &LsassProcess); // Getting the PEPROCESS using the PID 
   PsLookupProcessByProcessId(Csrss1, &Csrss1Process); // Getting the PEPROCESS using the PID 
   PsLookupProcessByProcessId(Csrss2, &Csrss2Process); // Getting the PEPROCESS using the PID 
-
 
   if (OpenedProcess == Csrss1Process) // Making sure to not strip csrss's Handle, will cause BSOD
     return OB_PREOP_SUCCESS;
@@ -72,22 +67,22 @@ OB_PREOP_CALLBACK_STATUS PreCallback(PVOID RegistrationContext, POB_PRE_OPERATIO
   if (OperationInformation->KernelHandle) // allow drivers to get a handle
     return OB_PREOP_SUCCESS;
 
-
   // PsGetProcessId((PEPROCESS)OperationInformation->Object) equals to the created handle's PID, so if the created Handle equals to the protected process's PID, strip
   if (PsGetProcessId((PEPROCESS)OperationInformation->Object) == ProtectedProcess)
   {
-
     if (OperationInformation->Operation == OB_OPERATION_HANDLE_CREATE) // striping handle 
     {
-      OperationInformation->Parameters->CreateHandleInformation.DesiredAccess = (SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION);
+      OperationInformation->Parameters->CreateHandleInformation.DesiredAccess = SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION;
     }
     else
     {
-      OperationInformation->Parameters->DuplicateHandleInformation.DesiredAccess = (SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION);
+      OperationInformation->Parameters->DuplicateHandleInformation.DesiredAccess = SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION;
     }
 
     return OB_PREOP_SUCCESS;
   }
+
+  return OB_PREOP_SUCCESS;
 }
 
 // This happens after everything. 
@@ -96,6 +91,10 @@ VOID PostCallBack(PVOID RegistrationContext, POB_POST_OPERATION_INFORMATION Oper
   UNREFERENCED_PARAMETER(RegistrationContext);
   UNREFERENCED_PARAMETER(OperationInformation);
 }
+
+//////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////
 
 // Unregistering the callback.
 VOID UnRegister()
@@ -120,14 +119,18 @@ NTSTATUS TerminatingProcess(ULONG targetPid)
   {
     return NtRet;
   }
+  DbgPrintEx(0, 0, "Terminating process %d", targetPid);
   ZwTerminateProcess(ProcessHandle, 0);
   ZwClose(ProcessHandle);
   return NtRet;
 }
 
+//////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////
+
 NTSTATUS DriverDispatchRoutine(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
 {
-  PVOID buffer;
   NTSTATUS NtStatus = STATUS_SUCCESS;
   PIO_STACK_LOCATION pIo;
   pIo = IoGetCurrentIrpStackLocation(pIrp);
@@ -157,18 +160,19 @@ NTSTATUS DriverDispatchRoutine(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
 // This will be called, if the driver is unloaded or just returns something
 VOID DriverUnload(PDRIVER_OBJECT pDriverObject)
 {
+  DbgPrintEx(0, 0, "unloading");
 
   UnRegister();
 
   IoDeleteSymbolicLink(&SACSymbolName);
+
   IoDeleteDevice(pDriverObject->DeviceObject);
 
-  //DbgPrint("Unload called!");
+  DbgPrintEx(0, 0, "Unload called!");
 }
 
 void RemoveTheLinks(PLIST_ENTRY Current)
 {
-
   PLIST_ENTRY Previous, Next;
 
   Previous = (Current->Blink);
@@ -299,12 +303,10 @@ PCHAR GhostProcess(UINT32 pid)
   return (PCHAR)result;
 }
 
-PDEVICE_OBJECT g_MyDevice; // Global pointer to our device object
-
-
-
 NTSTATUS Create(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
+  UNREFERENCED_PARAMETER(DeviceObject);
+
   Irp->IoStatus.Status = STATUS_SUCCESS;
   Irp->IoStatus.Information = 0;
 
@@ -320,12 +322,15 @@ NTSTATUS Close(PDEVICE_OBJECT DeviceObject, PIRP Irp)
   return STATUS_SUCCESS;
 }
 
+//////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////
+
 // Request to read from usermode
 #define IO_READ_REQUEST CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0701 /* Our Custom Code */, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
 
 // Request to write virtual user memory (memory of a program) from kernel space
 #define IO_UNLOADDRIVER_REQUEST CTL_CODE(FILE_DEVICE_UNKNOWN, 0x0702 /* Our Custom Code */, METHOD_BUFFERED, FILE_SPECIAL_ACCESS)
-
 
 // datatype for read request
 typedef struct _KERNEL_READ_REQUEST
@@ -347,8 +352,17 @@ typedef struct _KERNEL_UNLOADDRIVER
 
 } KERNEL_UNLOADDRIVER, * PKERNEL_UNLOADDRIVER;
 
+// datatype for ObRegisterCallbacks
+typedef struct _OB_REG_CONTEXT {
+  USHORT Version;
+  UNICODE_STRING Altitude;
+  USHORT ulIndex;
+  OB_OPERATION_REGISTRATION* OperationRegistration;
+} REG_CONTEXT, * PREG_CONTEXT;
+
 ULONG TerminateProcess = 0;
 BOOLEAN  UnloadDriver = FALSE;
+
 NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
   NTSTATUS Status;
@@ -360,6 +374,8 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
   ULONG ControlCode = stack->Parameters.DeviceIoControl.IoControlCode;
   if (ControlCode == IO_UNLOADDRIVER_REQUEST)
   {
+    DbgPrintEx(0, 0, "received unload driver request");
+
     PKERNEL_UNLOADDRIVER ReadInput = (PKERNEL_UNLOADDRIVER)Irp->AssociatedIrp.SystemBuffer;
 
     if (ReadInput->UnloadDriver)
@@ -369,6 +385,8 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
   }
   if (ControlCode == IO_READ_REQUEST)
   {
+    DbgPrintEx(0, 0, "recevied read request");
+
     // Get the input buffer & format it to our struct
     PKERNEL_READ_REQUEST ReadInput = (PKERNEL_READ_REQUEST)Irp->AssociatedIrp.SystemBuffer;
 
@@ -406,6 +424,8 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
   }
   else
   {
+    DbgPrintEx(0, 0, "unknown driver request");
+
     // if the code is unknown
     Status = STATUS_INVALID_PARAMETER;
     BytesIO = 0;
@@ -419,23 +439,28 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
   return Status;
 }
 NTSTATUS CallBackHandle = STATUS_SUCCESS;
+
 // Enabling the callback,
 VOID EnableCallBack()
 {
-
   OB_OPERATION_REGISTRATION OBOperationRegistration;
   OB_CALLBACK_REGISTRATION OBOCallbackRegistration;
   REG_CONTEXT regContext;
   UNICODE_STRING usAltitude;
+
   memset(&OBOperationRegistration, 0, sizeof(OB_OPERATION_REGISTRATION));
   memset(&OBOCallbackRegistration, 0, sizeof(OB_CALLBACK_REGISTRATION));
+
   memset(&regContext, 0, sizeof(REG_CONTEXT));
   regContext.ulIndex = 1;
   regContext.Version = 120;
+
   RtlInitUnicodeString(&usAltitude, L"1000");
 
   if ((USHORT)ObGetFilterVersion() == OB_FLT_REGISTRATION_VERSION)
   {
+    DbgPrintEx(0, 0, "enabling ObRegister callback");
+
     OBOperationRegistration.ObjectType = PsProcessType; // Use To Strip Handle Permissions For Threads PsThreadType
     OBOperationRegistration.Operations = OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE;
     OBOperationRegistration.PostOperation = PostCallBack; // Giving the function which happens after creating
@@ -449,8 +474,6 @@ VOID EnableCallBack()
     OBOCallbackRegistration.OperationRegistrationCount = (USHORT)1;
 
     CallBackHandle = ObRegisterCallbacks(&OBOCallbackRegistration, &ObHandle); // Register The CallBack
-
-
   }
 
 
@@ -461,13 +484,17 @@ VOID EnableCallBack()
   }
 }
 
+//////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////
+
 VOID MyLoadImageNotifyRoutine(
   IN PUNICODE_STRING FullImageName,
   IN HANDLE ProcessID,
   IN PIMAGE_INFO iMAGEiNFO)
 {
-  DbgPrintEx("Loaded Modules. ProcessID = %d, ThreadID = %d, Full ImageInfo = %d \n",
-    ProcessID, iMAGEiNFO, iMAGEiNFO);
+  //DbgPrintEx(0, 0, "Loaded Modules. ProcessID = %d, ThreadID = %d, Full ImageInfo = %d \n",
+  //  ProcessID, iMAGEiNFO, iMAGEiNFO);
 }
 
 VOID CreateThreadNotifyRoutine(
@@ -478,17 +505,16 @@ VOID CreateThreadNotifyRoutine(
 {
   if (Create)
   {
-    DbgPrintEx("Create Thread. ProcessID = %d, ThreadID = %d \n",
-      ProcessId, ThreadId);
+    //DbgPrintEx(0, 0, "Create Thread. ProcessID = %d, ThreadID = %d \n",
+    //  ProcessId, ThreadId);
   }
   else
   {
-    DbgPrintEx("Delete Thread. ProcessID = %d, ThreadID = %d \n",
-      ProcessId, ThreadId);
+    //DbgPrintEx(0, 0, "Delete Thread. ProcessID = %d, ThreadID = %d \n",
+    //  ProcessId, ThreadId);
 
   }
 }
-
 
 typedef struct _LDR_DATA_TABLE_ENTRY
 {
@@ -524,12 +550,12 @@ typedef struct _LDR_DATA_TABLE_ENTRY
   LIST_ENTRY StaticLinks;
 } LDR_DATA_TABLE_ENTRY, * PLDR_DATA_TABLE_ENTRY;
 
-PDEVICE_OBJECT DeviceObject;
+// refactor later!!!!!!!!!
 
 // Driver's Main function. This will be called and looped through till returned, or unloaded.
 NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pUniStr)
 {
-  DbgPrint("Loaded");
+  DbgPrintEx(0, 0, "Loaded");
   PLDR_DATA_TABLE_ENTRY CurDriverEntry = (PLDR_DATA_TABLE_ENTRY)pDriverObject->DriverSection;
   PLDR_DATA_TABLE_ENTRY NextDriverEntry = (PLDR_DATA_TABLE_ENTRY)CurDriverEntry->InLoadOrderLinks.Flink;
   PLDR_DATA_TABLE_ENTRY PrevDriverEntry = (PLDR_DATA_TABLE_ENTRY)CurDriverEntry->InLoadOrderLinks.Blink;
@@ -548,6 +574,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pUniStr)
   NTSTATUS NtRet2 = IoCreateDevice(pDriverObject, 0, &SACDriverName, FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN, FALSE, &pDeviceObj);
   if (NtRet2 == STATUS_SUCCESS)
   {
+    DbgPrintEx(0, 0, "io device created");
+
     ULONG i;
     for (i = 0; i < IRP_MJ_MAXIMUM_FUNCTION; i++)
     {

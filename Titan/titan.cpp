@@ -121,25 +121,6 @@ namespace titan
       return 0;
     }
 
-    void* get_procedure(std::string const& file_name, std::string const& proc_name)
-    {
-      HINSTANCE p_instance{ LoadLibraryA(file_name.data()) };
-
-      if (p_instance)
-      {
-        void* p_proc{ GetProcAddress(p_instance, proc_name.data()) };
-
-        if (p_proc)
-        {
-          return p_proc;
-        }
-      }
-
-      FreeLibrary(p_instance);
-
-      return nullptr;
-    }
-
     std::uint32_t dump_processes(std::uint32_t flags)
     {
       PROCESSENTRY32 pe32{};
@@ -255,187 +236,43 @@ namespace titan
 
   namespace memory
   {
-    std::int32_t patch(std::uintptr_t base, std::string buffer)
+    std::int32_t read(std::uintptr_t base, std::size_t size, std::uintptr_t assembly)
     {
+      void* p_process{ GetCurrentProcess() };
       unsigned long old_protection{};
 
-      std::uint32_t size{};
+      std::uintptr_t page_base{ ROUND_DOWN(base, 0x1000) };
+      std::size_t page_size{ ROUND_UP(size, 0x1000) };
 
-      void* p_addr{ (void*)base };
-
-      util::replace_string(buffer, " ", "");
-      util::replace_string(buffer, "\n", "");
-      util::replace_string(buffer, "\t", "");
-
-      std::vector<std::uint8_t> bytes{ util::str_to_bytes(buffer) };
-
-      base = ROUND_DOWN(p_addr, 0x1000);
-      size = ROUND_UP(bytes.size(), 0x1000);
-
-      if (VirtualProtect((void*)base, size, PAGE_EXECUTE_READWRITE, &old_protection))
+      if (VirtualProtectEx(p_process, (void*)page_base, page_size, PAGE_EXECUTE_READWRITE, &old_protection))
       {
-        std::memcpy(p_addr, bytes.data(), bytes.size());
+        ReadProcessMemory(p_process, (void*)base, (void*)assembly, size, nullptr);
 
-        if (VirtualProtect((void*)base, size, old_protection, &old_protection))
-        {
-          if (FlushInstructionCache(GetCurrentProcess(), (void*)base, size))
+        if (VirtualProtectEx(p_process, (void*)page_base, page_size, old_protection, &old_protection))
+          if (FlushInstructionCache(p_process, (void*)page_base, page_size))
             return 1;
-
-          return 0;
-        }
       }
 
       return 0;
     }
-    std::int32_t patch(std::uintptr_t base, std::vector<std::uint8_t> bytes)
+    std::int32_t write(std::uintptr_t base, std::size_t size, std::uintptr_t assembly)
     {
+      void* p_process{ GetCurrentProcess() };
       unsigned long old_protection{};
 
-      std::uint32_t size{};
+      std::uintptr_t page_base{ ROUND_DOWN((void*)base, 0x1000) };
+      std::size_t page_size{ ROUND_UP(size, 0x1000) };
 
-      void* p_addr{ (void*)base };
-
-      base = ROUND_DOWN(p_addr, 0x1000);
-      size = ROUND_UP(bytes.size(), 0x1000);
-
-      if (VirtualProtect((void*)base, size, PAGE_EXECUTE_READWRITE, &old_protection))
+      if (VirtualProtectEx(p_process, (void*)page_base, page_size, PAGE_EXECUTE_READWRITE, &old_protection))
       {
-        std::memcpy(p_addr, bytes.data(), bytes.size());
+        WriteProcessMemory(p_process, (void*)base, (void*)assembly, size, nullptr);
 
-        if (VirtualProtect((void*)base, size, old_protection, &old_protection))
-        {
-          if (FlushInstructionCache(GetCurrentProcess(), (void*)base, size))
+        if (VirtualProtectEx(p_process, (void*)page_base, page_size, old_protection, &old_protection))
+          if (FlushInstructionCache(p_process, (void*)page_base, page_size))
             return 1;
-
-          return 0;
-        }
       }
 
       return 0;
-    }
-
-    std::uintptr_t inject(std::uintptr_t base, std::uintptr_t return_addr, std::string buffer)
-    {
-      util::replace_string(buffer, " ", "");
-      util::replace_string(buffer, "\n", "");
-      util::replace_string(buffer, "\t", "");
-
-      std::vector<std::uint8_t> bytes{ util::str_to_bytes(buffer) };
-      std::size_t section_size{ bytes.size() + 7 };
-
-      void* p_gateway{ VirtualAlloc(nullptr, bytes.size() + 7, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE) };
-
-      std::printf("gateway_begin %p\n", p_gateway);
-
-      std::memcpy(p_gateway, bytes.data(), bytes.size());
-
-      //*(std::uint8_t*)((std::uintptr_t)p_gateway + (bytes.size() - 5)) = 0xE9;
-      //*(std::uintptr_t*)((std::uintptr_t)p_gateway + (bytes.size() - 5) + 1) = return_addr;
-
-      return_addr = return_addr - (std::uintptr_t)p_gateway;
-
-      // 6657930 - 4D117E
-      // 6657930
-
-      *(std::uint8_t*)((std::uintptr_t)p_gateway + (section_size - 7)) = 0xBA;
-      *(std::uintptr_t*)((std::uintptr_t)p_gateway + (section_size - 6)) = base + return_addr;
-
-      *(std::uint8_t*)((std::uintptr_t)p_gateway + (section_size - 2)) = 0xFF;
-      *(std::uint8_t*)((std::uintptr_t)p_gateway + (section_size - 1)) = 0xE0;
-
-      return (std::uintptr_t)p_gateway;
-    }
-    std::uintptr_t inject_asm(std::uintptr_t assembly, std::size_t size)
-    {
-      void* p_memory{ VirtualAlloc(nullptr, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE) };
-
-      if (p_memory)
-        std::memcpy(p_memory, (void*)assembly, size);
-
-      return (std::uintptr_t)p_memory;
-    }
-
-    std::int32_t read_int(std::uintptr_t base, std::uintptr_t offset)
-    {
-      std::int32_t value{};
-
-      unsigned long old_protection{};
-
-      if (VirtualProtect((void*)(base + offset), 4, PAGE_EXECUTE_READWRITE, &old_protection))
-      {
-        value = *(std::int32_t*)(*(std::uintptr_t*)(base + offset));
-
-        if (VirtualProtect((void*)(base + offset), 4, old_protection, &old_protection))
-          return value;
-      }
-
-      return value;
-    }
-    std::string read_string(std::uintptr_t base, std::uintptr_t offset)
-    {
-      std::string value{};
-
-      unsigned long old_protection{};
-
-      if (VirtualProtect((void*)(base + offset), 4, PAGE_EXECUTE_READWRITE, &old_protection))
-      {
-        value = *(std::string*)(*(std::uintptr_t*)(base + offset));
-
-        if (VirtualProtect((void*)(base + offset), 4, old_protection, &old_protection))
-          return value;
-      }
-
-      return value;
-    }
-    std::float_t read_float(std::uintptr_t base, std::uintptr_t offset)
-    {
-      std::float_t value{};
-
-      unsigned long old_protection{};
-
-      if (VirtualProtect((void*)(base + offset), 4, PAGE_EXECUTE_READWRITE, &old_protection))
-      {
-        value = *(std::float_t*)(*(std::uintptr_t*)(base + offset));
-
-        if (VirtualProtect((void*)(base + offset), 4, old_protection, &old_protection))
-          return value;
-      }
-
-      return value;
-    }
-
-    void write_int(std::uintptr_t base, std::uintptr_t offset, std::int32_t value)
-    {
-      unsigned long old_protection{};
-
-      if (VirtualProtect((void*)(base + offset), 4, PAGE_EXECUTE_READWRITE, &old_protection))
-      {
-        *(std::int32_t*)(*(std::uintptr_t*)(base + offset)) = value;
-
-        VirtualProtect((void*)(base + offset), 4, old_protection, &old_protection);
-      }
-    }
-    void write_string(std::uintptr_t base, std::uintptr_t offset, std::string const& value)
-    {
-      unsigned long old_protection{};
-
-      if (VirtualProtect((void*)(base + offset), 4, PAGE_EXECUTE_READWRITE, &old_protection))
-      {
-        *(std::string*)(*(std::uintptr_t*)(base + offset)) = value;
-
-        VirtualProtect((void*)(base + offset), 4, old_protection, &old_protection);
-      }
-    }
-    void write_float(std::uintptr_t base, std::uintptr_t offset, std::float_t value)
-    {
-      unsigned long old_protection{};
-
-      if (VirtualProtect((void*)(base + offset), 4, PAGE_EXECUTE_READWRITE, &old_protection))
-      {
-        *(std::float_t*)(*(std::uintptr_t*)(base + offset)) = value;
-
-        VirtualProtect((void*)(base + offset), 4, old_protection, &old_protection);
-      }
     }
 
     void dump_memory(std::uintptr_t base, std::uintptr_t offset, std::size_t size, std::size_t page_size)
@@ -524,6 +361,65 @@ namespace titan
 #endif
 
       return 0;
+    }
+  }
+
+  namespace console
+  {
+    void parse_args(std::int32_t argc, char** argv)
+    {
+
+    }
+  }
+
+  namespace filesystem
+  {
+    std::int32_t read_int(std::fstream& stream, std::size_t offset, std::uint32_t big_endian)
+    {
+      std::int32_t result{};
+      std::uint8_t buffer[4]{};
+
+      stream.seekg(offset, std::ios::beg);
+      stream.read((char*)&buffer[0], 4);
+
+      result = big_endian
+        ? (std::uint8_t)buffer[0] << 24 | (std::uint8_t)buffer[1] << 16 | (std::uint8_t)buffer[2] << 8 | (std::uint8_t)buffer[3]
+        : (std::uint8_t)buffer[3] << 24 | (std::uint8_t)buffer[2] << 16 | (std::uint8_t)buffer[1] << 8 | (std::uint8_t)buffer[0];
+
+      return result;
+    }
+
+    namespace ea
+    {
+      void dump_viv_header(std::string const& file)
+      {
+        std::fstream stream{};
+
+        stream.open(file.c_str(), std::ios::in | std::ios::binary);
+
+        if (stream.is_open())
+        {
+          std::int32_t magic{ read_int(stream, 0, 1) };
+          std::int32_t total_file_size{ read_int(stream, 4, 1) };
+          std::int32_t file_count{ read_int(stream, 8, 1) };
+          std::int32_t header_size{ read_int(stream, 12, 1) };
+
+          assert(magic == 0x42494748);
+          assert(total_file_size > 0);
+          assert(file_count > 0);
+          assert(header_size > 0);
+
+          std::printf(
+            "%s\ntotal file size: %d\nfile count: %d\nheader size: %d\n\n",
+            file.c_str(),
+            total_file_size,
+            file_count,
+            header_size
+          );
+
+          stream.close();
+        }
+      }
     }
   }
 
