@@ -1,0 +1,87 @@
+;
+; TitanKMD.inf
+;
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=Sample ; TODO: edit Class
+ClassGuid={78A1C341-4539-11d3-B88D-00C04FAD5171} ; TODO: edit ClassGuid
+Provider=%ManufacturerName%
+CatalogFile=TitanKMD.cat
+DriverVer= ; TODO: set DriverVer in stampinf property pages
+PnpLockdown=1
+
+[DestinationDirs]
+DefaultDestDir = 12
+TitanKMD_Device_CoInstaller_CopyFiles = 11
+
+; ================= Class section =====================
+
+[ClassInstall32]
+Addreg=SampleClassReg
+
+[SampleClassReg]
+HKR,,,0,%ClassName%
+HKR,,Icon,,-5
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+TitanKMD.sys  = 1,,
+WdfCoInstaller$KMDFCOINSTALLERVERSION$.dll=1 ; make sure the number matches with SourceDisksNames
+
+;*****************************************
+; Install Section
+;*****************************************
+
+[Manufacturer]
+%ManufacturerName%=Standard,NT$ARCH$
+
+[Standard.NT$ARCH$]
+%TitanKMD.DeviceDesc%=TitanKMD_Device, Root\TitanKMD ; TODO: edit hw-id
+
+[TitanKMD_Device.NT]
+CopyFiles=Drivers_Dir
+
+[Drivers_Dir]
+TitanKMD.sys
+
+;-------------- Service installation
+[TitanKMD_Device.NT.Services]
+AddService = TitanKMD,%SPSVCINST_ASSOCSERVICE%, TitanKMD_Service_Inst
+
+; -------------- TitanKMD driver install sections
+[TitanKMD_Service_Inst]
+DisplayName    = %TitanKMD.SVCDESC%
+ServiceType    = 1               ; SERVICE_KERNEL_DRIVER
+StartType      = 3               ; SERVICE_DEMAND_START
+ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %12%\TitanKMD.sys
+
+;
+;--- TitanKMD_Device Coinstaller installation ------
+;
+
+[TitanKMD_Device.NT.CoInstallers]
+AddReg=TitanKMD_Device_CoInstaller_AddReg
+CopyFiles=TitanKMD_Device_CoInstaller_CopyFiles
+
+[TitanKMD_Device_CoInstaller_AddReg]
+HKR,,CoInstallers32,0x00010000, "WdfCoInstaller$KMDFCOINSTALLERVERSION$.dll,WdfCoInstaller"
+
+[TitanKMD_Device_CoInstaller_CopyFiles]
+WdfCoInstaller$KMDFCOINSTALLERVERSION$.dll
+
+[TitanKMD_Device.NT.Wdf]
+KmdfService =  TitanKMD, TitanKMD_wdfsect
+[TitanKMD_wdfsect]
+KmdfLibraryVersion = $KMDFVERSION$
+
+[Strings]
+SPSVCINST_ASSOCSERVICE= 0x00000002
+ManufacturerName="<Your manufacturer name>" ;TODO: Replace with your manufacturer name
+ClassName="Samples" ; TODO: edit ClassName
+DiskName = "TitanKMD Installation Disk"
+TitanKMD.DeviceDesc = "TitanKMD Device"
+TitanKMD.SVCDESC = "TitanKMD Service"

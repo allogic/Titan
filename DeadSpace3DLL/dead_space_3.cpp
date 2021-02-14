@@ -36,6 +36,16 @@ __declspec(naked) void weapon_mod_patch()
   }
 }
 
+void signal_handler(std::int32_t signal)
+{
+  std::printf("interrupt received %d\n", signal);
+
+  titan::memory::write(0x400000 + 0xD116E, 6, (std::uintptr_t)"\xD9\x80\xD8\x02\x00\x00");
+
+  void(*jmp)() = (void(*)())0x4D116E;
+  jmp();
+}
+
 unsigned long __stdcall DllThread(HINSTANCE p_instance)
 {
   std::uint32_t pid{};
@@ -74,7 +84,6 @@ unsigned long __stdcall DllThread(HINSTANCE p_instance)
 
         std::printf("weapon mods %d\n", active);
       }
-
       if (GetAsyncKeyState(VK_F5) & 0x0001)
       {
         static std::uint32_t active{};
@@ -102,6 +111,14 @@ unsigned long __stdcall DllThread(HINSTANCE p_instance)
         //titan::memory::write(0x400000 + 0x732180, 0, (std::uintptr_t)""); // event trigger E register monster entity
 
         std::printf("weapon mods %d\n", active);
+      }
+      if (GetAsyncKeyState(VK_F6) & 0x0001)
+      {
+        titan::memory::write(0x400000 + 0xD116E, 6, (std::uintptr_t)"\xCC\x90\x90\x90\x90\x90");
+
+        std::signal(SIGINT, signal_handler);
+
+        std::printf("patched breakpoint\n");
       }
     }
   }

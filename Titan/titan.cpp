@@ -64,10 +64,21 @@ namespace titan
     }
   }
 
+  namespace kernel
+  {
+    std::int32_t send()
+    {
+      //DeviceIoControl(hDriver, IO_READ_REQUEST, &ReadRequest, sizeof(ReadRequest), &ReadRequest, sizeof(ReadRequest), &Bytes, NULL
+      return 0;
+    }
+}
+
   namespace system
   {
-    std::int32_t find_process(std::wstring const& name, std::int32_t flags, PROCESSENTRY32& pe32)
+    std::int32_t find_process(std::string const& name, std::int32_t flags, PROCESSENTRY32& pe32)
     {
+      std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> conv{};
+
       pe32.dwSize = sizeof(PROCESSENTRY32);
 
       void* hProcessSnap{ CreateToolhelp32Snapshot(flags, 0) };
@@ -81,7 +92,7 @@ namespace titan
 
       do
       {
-        if (wcscmp(name.c_str(), pe32.szExeFile) == 0)
+        if (wcscmp(conv.from_bytes(name.c_str()).c_str(), pe32.szExeFile) == 0)
         {
           CloseHandle(hProcessSnap);
 
@@ -93,8 +104,10 @@ namespace titan
 
       return 0;
     }
-    std::int32_t find_module(std::wstring const& name, std::int32_t pid, std::int32_t flags, MODULEENTRY32& me32)
+    std::int32_t find_module(std::string const& name, std::int32_t pid, std::int32_t flags, MODULEENTRY32& me32)
     {
+      std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> conv{};
+
       me32.dwSize = sizeof(MODULEENTRY32);
 
       void* hProcessSnap{ CreateToolhelp32Snapshot(flags, pid) };
@@ -108,7 +121,7 @@ namespace titan
 
       do
       {
-        if (wcscmp(name.c_str(), me32.szModule) == 0)
+        if (wcscmp(conv.from_bytes(name.c_str()).c_str(), me32.szModule) == 0)
         {
           CloseHandle(hProcessSnap);
 
@@ -388,6 +401,23 @@ namespace titan
 
       return result;
     }
+    std::string read_str(std::fstream& stream, std::size_t offset)
+    {
+      std::string result{};
+      char chr{};
+
+      stream.seekg(offset, std::ios::beg);
+
+      while (stream.get(chr))
+      {
+        if (chr == '\0')
+          break;
+
+        result += chr;
+      }
+
+      return result;
+    }
 
     namespace ea
     {
@@ -400,22 +430,37 @@ namespace titan
         if (stream.is_open())
         {
           std::int32_t magic{ read_int(stream, 0, 1) };
-          std::int32_t total_file_size{ read_int(stream, 4, 1) };
-          std::int32_t file_count{ read_int(stream, 8, 1) };
-          std::int32_t header_size{ read_int(stream, 12, 1) };
+          std::uint32_t total_file_size{ (std::uint32_t)read_int(stream, 4, 1) };
+          std::uint32_t file_count{ (std::uint32_t)read_int(stream, 8, 1) };
+          std::uint32_t header_size{ (std::uint32_t)read_int(stream, 12, 1) };
 
           assert(magic == 0x42494748);
           assert(total_file_size > 0);
           assert(file_count > 0);
           assert(header_size > 0);
 
-          std::printf(
-            "%s\ntotal file size: %d\nfile count: %d\nheader size: %d\n\n",
-            file.c_str(),
-            total_file_size,
-            file_count,
-            header_size
-          );
+          std::printf("File: %s\n", file.c_str());
+          std::printf("Total file size: %u\n", total_file_size);
+          std::printf("File count: %u\n", file_count);
+          std::printf("Header size: %u\n", header_size);
+
+          std::size_t read_position{ 16 };
+
+          for (std::size_t i{}; i < file_count; i++)
+          {
+            std::uint32_t file_offset{ (std::uint32_t)read_int(stream, read_position, 1) };
+            std::uint32_t file_size{ (std::uint32_t)read_int(stream, read_position + 4, 1) };
+            std::string file_name{ read_str(stream, read_position + 8) };
+
+            std::printf("%8u 0x%p %16u %16u %s\n", i, (void*)read_position, file_offset, file_size, file_name.c_str());
+
+            read_position += 4;
+            read_position += 4;
+            read_position += file_name.size();
+            read_position += 1;
+          }
+
+          std::printf("\n");
 
           stream.close();
         }
@@ -449,7 +494,7 @@ namespace titan
 
     CloseHandle(p_process);
 
-    return !exit_code ? 1 : 0;
+    return exit_code;
   }
   std::int32_t spawn_console(std::uint32_t& pid)
   {

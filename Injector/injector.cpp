@@ -1,32 +1,40 @@
 #include <titan.h>
 
-#ifdef _DEBUG
-#ifdef _WIN64
-#define PATH "C:\\Users\\Michael\\Downloads\\Titan\\x64\\Debug\\"
-#else
-#define PATH "C:\\Users\\Michael\\Downloads\\Titan\\Debug\\"
-#endif
-#else
-#ifdef _WIN64
-#define PATH "C:\\Users\\Michael\\Downloads\\Titan\\x64\\Release\\"
-#else
-#define PATH "C:\\Users\\Michael\\Downloads\\Titan\\Release\\"
-#endif
-#endif
-
-int main()
+int main(int argc, char** argv)
 {
-  //titan::interactive();
-
   PROCESSENTRY32 pe32{};
 
-  if (titan::system::find_process(L"deadspace3.exe", TH32CS_SNAPPROCESS, pe32))
+  std::int32_t injected{};
+  std::int32_t process_found{};
+
+  std::string process_name{ argv[1] };
+  std::string dll_name{ argv[2] };
+
+  while (1)
   {
-    if (titan::inject_dll(PATH "DeadSpace3DLL.dll", pe32.th32ProcessID))
+    process_found = titan::system::find_process(process_name, TH32CS_SNAPPROCESS, pe32);
+
+    if (injected)
     {
-      return 0;
+      if (!process_found)
+        injected = 0;
     }
+    else
+    {
+      std::printf("Waiting...\n");
+
+      if (process_found)
+      {
+        titan::inject_dll(dll_name, pe32.th32ProcessID);
+
+        injected = 1;
+
+        std::printf("Injecting...\n");
+      }
+    }
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   }
 
-  return -1;
+  return 0;
 }

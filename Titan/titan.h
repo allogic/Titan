@@ -12,6 +12,10 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <chrono>
+#include <thread>
+#include <codecvt>
+#include <csignal>
 
 #include <zydis/zydis.h>
 
@@ -56,10 +60,15 @@ namespace titan
     std::vector<std::string> tokenize(std::string subject, std::string const& delimiter);
   }
 
+  namespace kernel
+  {
+    std::int32_t send();
+  }
+
   namespace system
   {
-    std::int32_t find_process(std::wstring const& name, std::int32_t flags, PROCESSENTRY32& pe32);
-    std::int32_t find_module(std::wstring const& name, std::int32_t pid, std::int32_t flags, MODULEENTRY32& me32);
+    std::int32_t find_process(std::string const& name, std::int32_t flags, PROCESSENTRY32& pe32);
+    std::int32_t find_module(std::string const& name, std::int32_t pid, std::int32_t flags, MODULEENTRY32& me32);
 
     std::uint32_t dump_processes(std::uint32_t flags);
     std::uint32_t dump_modules(std::uint32_t pid, std::uint32_t flags);
@@ -91,6 +100,7 @@ namespace titan
   namespace filesystem
   {
     std::int32_t read_int(std::fstream& stream, std::size_t offset, std::uint32_t big_endian = 0);
+    std::string read_str(std::fstream& stream, std::size_t offset);
 
     namespace ea
     {
